@@ -13,8 +13,27 @@ WEIGHTS_DIR = BASE_DIR / "weights"
 MODEL_ID = "models--Qwen--Qwen3-VL-2B-Instruct"
 
 
+def is_valid_model_dir(dir_path: Path) -> bool:
+    """Check if directory contains both config and model weight files."""
+    if not (dir_path / "config.json").is_file():
+        return False
+    return any(
+        (dir_path / f).is_file()
+        for f in (
+            "model.safetensors",
+            "pytorch_model.bin",
+            "model.safetensors.index.json",
+            "pytorch_model.bin.index.json",
+        )
+    )
+
+
 def resolve_model_path() -> Path:
-    """Locate the downloaded snapshot inside weights/."""
+    """Locate the downloaded snapshot or model directory inside weights/."""
+
+    direct_dir = WEIGHTS_DIR / "Qwen3-VL-2B-Instruct"
+    if is_valid_model_dir(direct_dir):
+        return direct_dir
 
     snapshots_dir = WEIGHTS_DIR / MODEL_ID / "snapshots"
 
@@ -22,27 +41,36 @@ def resolve_model_path() -> Path:
 
         for snapshot in sorted(snapshots_dir.iterdir()):
 
-            if (snapshot / "config.json").is_file():
+            if is_valid_model_dir(snapshot):
                 return snapshot
 
-    raise FileNotFoundError(
-        f"No snapshot with a config.json found for {MODEL_ID} under {WEIGHTS_DIR}"
+    print(f"Downloading model 'Qwen/Qwen3-VL-2B-Instruct' into '{direct_dir}'...")
+    from huggingface_hub import snapshot_download
+
+    WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+    snapshot_download(
+        repo_id="Qwen/Qwen3-VL-2B-Instruct",
+        local_dir=direct_dir
     )
+    return direct_dir
 
 
 MODEL_PATH = resolve_model_path()
 
 DEVICE = (
-    "mps"
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
     if torch.backends.mps.is_available()
     else "cpu"
 )
 
-# bfloat16 on MPS: float16 has too little exponent range for this model and
-# leaks garbage tokens into the output ("a popular American fast food item]+$300,000").
+# float16/bfloat16 on GPU (CUDA/MPS) for memory & speed optimization
 DTYPE = (
     torch.bfloat16
     if DEVICE == "mps"
+    else torch.float16
+    if DEVICE == "cuda"
     else torch.float32
 )
 

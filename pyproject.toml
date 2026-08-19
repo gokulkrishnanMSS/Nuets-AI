@@ -1,0 +1,33 @@
+[project]
+name = "nuets-ai"
+version = "0.1.0"
+description = "Nuets Food AI Service powered by Qwen3-VL-2B-Instruct"
+authors = [
+    { name = "Nuets" }
+]
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic",
+    "transformers",
+    "accelerate",
+    "pillow",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+torch = { version = "*", source = "pytorch-cu124" }
+torchvision = { version = "*", source = "pytorch-cu124" }
+
+[[tool.poetry.source]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"

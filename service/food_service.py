@@ -23,15 +23,270 @@ class FoodService:
         image_bytes: bytes,
         prompt: str,
         max_new_tokens: int = 64
-    ) -> str:
+    ) -> tuple[str, list[str], list[dict]]:
 
         image = self.load_image(image_bytes)
 
-        return self.describe_image(
+        result = self.describe_image(
             image,
             prompt,
             max_new_tokens
         )
+
+        ingredients_prompt = (
+            "Identify the dish in this image and list all of its ingredients. "
+            "Return ONLY a valid JSON array of ingredient strings, for example: "
+            '["pizza dough", "tomato sauce", "mozzarella cheese"]. '
+            "Do not include markdown formatting, code fences, or any extra text."
+        )
+
+        raw_ingredients = self.describe_image(
+            image,
+            ingredients_prompt,
+            max_new_tokens=128
+        )
+
+        ingredients = self.parse_ingredients(raw_ingredients)
+        nutrition_info = self.fetch_nutrition(ingredients)
+
+        return result, ingredients, nutrition_info
+
+    def fetch_nutrition(self, ingredients: list[str]) -> list[dict]:
+        import psycopg2
+        nutrition_data = []
+        if not ingredients:
+            return nutrition_data
+            
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port="5432",
+                user="macbook-pro",
+                password="Mini@pass001",
+                dbname="postgres"
+            )
+            cur = conn.cursor()
+            
+            for ingredient in ingredients:
+                # Use ILIKE for case-insensitive partial match
+                # e.g., if ingredient is "pizza dough", it will match "%pizza dough%"
+                cur.execute(
+                    "SELECT * FROM nutrition_data WHERE ingredient ILIKE %s LIMIT 1;",
+                    (f"%{ingredient}%",)
+                )
+                row = cur.fetchone()
+                if row:
+                    cols = [desc[0] for desc in cur.description]
+                    nutrient_dict = dict(zip(cols, row))
+                    nutrient_dict['matched_ingredient'] = ingredient
+                    nutrition_data.append(nutrient_dict)
+                    
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching nutrition from DB: {e}")
+            
+        return nutrition_data
+
+    def save_scan_result(self, result: str, ingredients: list[str], nutrition_info: list[dict]):
+        import psycopg2
+        import json
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port="5432",
+                user="macbook-pro",
+                password="Mini@pass001",
+                dbname="postgres"
+            )
+            cur = conn.cursor()
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS scan_results (
+                    id SERIAL PRIMARY KEY,
+                    result TEXT,
+                    ingredients JSONB,
+                    nutrition_info JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            
+            cur.execute(
+                """
+                INSERT INTO scan_results (result, ingredients, nutrition_info)
+                VALUES (%s, %s, %s)
+                RETURNING id;
+                """,
+                (result, json.dumps(ingredients), json.dumps(nutrition_info))
+            )
+            scan_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            conn.close()
+            print(f"Successfully saved scan result with id: {scan_id}")
+        except Exception as e:
+            print(f"Error saving scan result to DB: {e}")
+
+    def get_scan_results(self, limit: int = 10, offset: int = 0) -> list[dict]:
+        import psycopg2
+        results = []
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port="5432",
+                user="macbook-pro",
+                password="Mini@pass001",
+                dbname="postgres"
+            )
+            cur = conn.cursor()
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS scan_results (
+                    id SERIAL PRIMARY KEY,
+                    result TEXT,
+                    ingredients JSONB,
+                    nutrition_info JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            cur.execute(
+                """
+                SELECT id, result, ingredients, nutrition_info, created_at
+                FROM scan_results
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """,
+                (limit, offset)
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                results.append({
+                    "id": row[0],
+                    "result": row[1],
+                    "ingredients": row[2],
+                    "nutrition_info": row[3],
+                    "created_at": str(row[4])
+                })
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching scan results from DB: {e}")
+        return results
+
+    def search_scan_results(self, query: str, limit: int = 10, offset: int = 0) -> list[dict]:
+        import psycopg2
+        results = []
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port="5432",
+                user="macbook-pro",
+                password="Mini@pass001",
+                dbname="postgres"
+            )
+            cur = conn.cursor()
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS scan_results (
+                    id SERIAL PRIMARY KEY,
+                    result TEXT,
+                    ingredients JSONB,
+                    nutrition_info JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            search_query = f"%{query}%"
+            cur.execute(
+                """
+                SELECT id, result, ingredients, nutrition_info, created_at
+                FROM scan_results
+                WHERE result ILIKE %s OR ingredients::text ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """,
+                (search_query, search_query, limit, offset)
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                results.append({
+                    "id": row[0],
+                    "result": row[1],
+                    "ingredients": row[2],
+                    "nutrition_info": row[3],
+                    "created_at": str(row[4])
+                })
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error searching scan results from DB: {e}")
+        return results
+
+    def get_scan_result_by_id(self, scan_id: int) -> dict | None:
+        import psycopg2
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port="5432",
+                user="macbook-pro",
+                password="Mini@pass001",
+                dbname="postgres"
+            )
+            cur = conn.cursor()
+            
+            cur.execute(
+                """
+                SELECT id, result, ingredients, nutrition_info, created_at
+                FROM scan_results
+                WHERE id = %s;
+                """,
+                (scan_id,)
+            )
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                return {
+                    "id": row[0],
+                    "result": row[1],
+                    "ingredients": row[2],
+                    "nutrition_info": row[3],
+                    "created_at": str(row[4])
+                }
+        except Exception as e:
+            print(f"Error fetching scan result from DB: {e}")
+        return None
+
+    def parse_ingredients(self, text: str) -> list[str]:
+        import json
+        import re
+
+        cleaned = text.strip()
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, list):
+                return [str(item).strip() for item in data if str(item).strip()]
+            elif isinstance(data, dict) and "ingredients" in data and isinstance(data["ingredients"], list):
+                return [str(item).strip() for item in data["ingredients"] if str(item).strip()]
+        except Exception:
+            pass
+
+        lines = cleaned.splitlines()
+        ingredients = []
+        for line in lines:
+            line = re.sub(r"^[\s\-\*\d\.\•]+", "", line).strip()
+            if line:
+                if "," in line and not (line.startswith("[") and line.endswith("]")):
+                    parts = [p.strip().strip('"\'') for p in line.split(",") if p.strip()]
+                    ingredients.extend(parts)
+                else:
+                    ingredients.append(line.strip('"\''))
+
+        return ingredients
 
     def load_image(
         self,

@@ -7,3 +7,4 @@ torchvision
 transformers
 accelerate
 pillow
+psycopg2-binary

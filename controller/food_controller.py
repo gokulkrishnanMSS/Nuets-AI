@@ -4,8 +4,8 @@ from fastapi import APIRouter, Form, HTTPException, BackgroundTasks
 from PIL import UnidentifiedImageError
 
 from config.model_config import DEVICE
-from dto.food_request import FoodRequest
-from dto.food_response import FoodResponse
+from schemas.common import ErrorResponse
+from schemas.food import FoodRequest, FoodResponse
 from service.food_service import FoodService
 
 router = APIRouter(
@@ -19,6 +19,7 @@ food_service = FoodService()
 @router.post(
     "/identify",
     response_model=FoodResponse,
+    responses={400: {"model": ErrorResponse}},
     summary="Identify food and extract ingredients from an uploaded image"
 )
 def identify_food(
@@ -77,6 +78,7 @@ def search_scans(query: str, limit: int = 10, offset: int = 0):
 
 @router.get(
     "/scans/{scan_id}",
+    responses={404: {"model": ErrorResponse}},
     summary="Get details of a specific scan result"
 )
 def get_scan_by_id(scan_id: int):

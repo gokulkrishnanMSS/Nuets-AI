@@ -8,7 +8,7 @@ DB_USER = "macbook-pro"
 DB_PASS = "Mini@pass001"
 DB_NAME = "postgres"  # Using default postgres database, change if needed
 
-CSV_FILE = r"C:\Users\gokul\Downloads\food_ingredients_nutrition_per_10g_generic (2).csv"
+CSV_FILE = r"/Users/gokul/ZiliconCloud/Python/Nuets/food_ingredients_nutrition_per_10g_generic.csv"
 
 def load_data_to_postgres():
     print(f"Connecting to PostgreSQL at {DB_HOST}:{DB_PORT}...")

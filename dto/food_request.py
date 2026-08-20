@@ -1,24 +1,5 @@
-from fastapi import UploadFile
-from pydantic import BaseModel, Field
+"""Deprecated: use :mod:`schemas.food` instead."""
 
-DEFAULT_PROMPT = "Identify this food and describe it."
+from schemas.food import DEFAULT_PROMPT, FoodRequest  # noqa: F401
 
-
-class FoodRequest(BaseModel):
-    image: UploadFile = Field(
-        ...,
-        description="The image file to analyse (jpeg, png, webp, ...)."
-    )
-
-    prompt: str = Field(
-        default=DEFAULT_PROMPT,
-        description="Instruction sent to the vision-language model.",
-        examples=[DEFAULT_PROMPT]
-    )
-
-    max_new_tokens: int = Field(
-        default=64,
-        ge=1,
-        le=1024,
-        description="Maximum number of tokens to generate."
-    )
+__all__ = ["DEFAULT_PROMPT", "FoodRequest"]

@@ -3,7 +3,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Lets `python app.py` and `uvicorn app:app` resolve the `config` / `dto` /
+# Lets `python app.py` and `uvicorn app:app` resolve the `config` / `schemas` /
 # `service` / `controller` imports regardless of the current working directory.
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -13,11 +13,13 @@ from fastapi.responses import RedirectResponse  # noqa: E402
 
 from config.model_config import DEVICE, MODEL_PATH  # noqa: E402
 from controller.food_controller import router  # noqa: E402
+from controller.recipe_controller import router as recipe_router  # noqa: E402
 
 app = FastAPI(
     title="Nuets Food AI Service",
     description=(
-        "Food identification powered by Qwen3-VL-2B-Instruct running locally.\n\n"
+        "Food identification and healthy recipe generation powered by "
+        "Qwen3-VL-2B-Instruct running locally.\n\n"
         "- **Swagger UI**: [/docs](/docs)\n"
         "- **ReDoc**: [/redoc](/redoc)\n"
         "- **OpenAPI schema**: [/openapi.json](/openapi.json)"
@@ -32,6 +34,10 @@ app = FastAPI(
             "description": "Identify and describe food in an image."
         },
         {
+            "name": "Recipe",
+            "description": "Generate a healthy preparation procedure from a food description."
+        },
+        {
             "name": "Health",
             "description": "Service and model status."
         }
@@ -39,6 +45,7 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(recipe_router)
 
 
 @app.get(

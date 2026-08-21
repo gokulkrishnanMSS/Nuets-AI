@@ -9,6 +9,7 @@ from config.model_config import (
     model,
     processor
 )
+from service.exceptions import FoodNotRecognisedError
 
 # One model instance shared by every request. FastAPI runs sync endpoints in a
 # threadpool, so generation is serialised to keep concurrent calls off the same
@@ -23,7 +24,7 @@ class FoodService:
         image_bytes: bytes,
         prompt: str,
         max_new_tokens: int = 64
-    ) -> tuple[str, list[str], list[dict]]:
+    ) -> tuple[str, list[str], list[dict], float]:
 
         image = self.load_image(image_bytes)
 
@@ -33,23 +34,102 @@ class FoodService:
             max_new_tokens
         )
 
+        # Calories are asked for first so a reply cut off by the token limit
+        # still carries them.
         ingredients_prompt = (
-            "Identify the dish in this image and list all of its ingredients. "
-            "Return ONLY a valid JSON array of ingredient strings, for example: "
-            '["pizza dough", "tomato sauce", "mozzarella cheese"]. '
+            "Identify the food in this image, estimate its calories, and list "
+            "its ingredients. Return ONLY a valid JSON object, for example: "
+            '{"calories_kcal": 850, "ingredients": ["pizza dough", "tomato sauce"]}. '
+            "calories_kcal must be a plain number, your best estimate of the "
+            "total calories of the food shown. If the image shows no food or "
+            'drink at all, return {"calories_kcal": 0, "ingredients": []}. '
             "Do not include markdown formatting, code fences, or any extra text."
         )
 
         raw_ingredients = self.describe_image(
             image,
             ingredients_prompt,
-            max_new_tokens=128
+            max_new_tokens=160
         )
+
+        calories_kcal = self.parse_calories(raw_ingredients)
+
+        # The model puts no calories on something it does not read as food.
+        if calories_kcal <= 0:
+
+            raise FoodNotRecognisedError(
+                "No food could be identified in the uploaded image."
+            )
 
         ingredients = self.parse_ingredients(raw_ingredients)
         nutrition_info = self.fetch_nutrition(ingredients)
 
-        return result, ingredients, nutrition_info
+        return result, ingredients, nutrition_info, calories_kcal
+
+    def parse_calories(self, text: str) -> float:
+        """Read the model's calorie estimate out of its JSON reply.
+
+        Returns 0.0 when the model gave no usable number, which the caller
+        treats as "this is not food".
+        """
+
+        import json
+        import re
+
+        cleaned = text.strip()
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+
+        keys = (
+            "calories_kcal",
+            "calories",
+            "total_calories_kcal",
+            "total_calories",
+            "kcal"
+        )
+
+        try:
+            data = json.loads(cleaned)
+        except Exception:
+            data = None
+
+        if isinstance(data, dict):
+
+            for key in keys:
+
+                if key in data:
+
+                    calories = self.to_calories(data[key])
+
+                    if calories > 0:
+                        return calories
+
+        # Truncated or chatty reply: pull the number next to the calorie key.
+        match = re.search(
+            r"(?:calories_kcal|total_calories|calories|kcal)\"?\s*[:=]\s*\"?\s*(\d+(?:\.\d+)?)",
+            cleaned,
+            flags=re.IGNORECASE
+        )
+
+        return float(match.group(1)) if match else 0.0
+
+    def to_calories(self, value) -> float:
+        """Accept 850, "850" or "850 kcal" and return a number."""
+
+        import re
+
+        if isinstance(value, bool):
+            return 0.0
+
+        if isinstance(value, (int, float)):
+            return max(float(value), 0.0)
+
+        if not isinstance(value, str):
+            return 0.0
+
+        match = re.search(r"\d+(?:\.\d+)?", value)
+
+        return float(match.group()) if match else 0.0
 
     def fetch_nutrition(self, ingredients: list[str]) -> list[dict]:
         import psycopg2

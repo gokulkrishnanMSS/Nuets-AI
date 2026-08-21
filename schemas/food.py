@@ -57,6 +57,15 @@ class FoodResponse(BaseSchema):
         description="Nutritional information for the identified ingredients from the database."
     )
 
+    calories_kcal: float = Field(
+        ...,
+        description=(
+            "Calories of the food shown, in kcal, as estimated by the model. "
+            "A best-effort estimate from the image alone, not a measurement."
+        ),
+        examples=[850.0]
+    )
+
     filename: str = Field(
         ...,
         description="Name of the uploaded image."

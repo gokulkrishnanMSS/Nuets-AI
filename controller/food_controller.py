@@ -6,6 +6,7 @@ from PIL import UnidentifiedImageError
 from config.model_config import DEVICE
 from schemas.common import ErrorResponse
 from schemas.food import FoodRequest, FoodResponse
+from service.exceptions import FoodNotRecognisedError
 from service.food_service import FoodService
 
 router = APIRouter(
@@ -19,7 +20,10 @@ food_service = FoodService()
 @router.post(
     "/identify",
     response_model=FoodResponse,
-    responses={400: {"model": ErrorResponse}},
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse}
+    },
     summary="Identify food and extract ingredients from an uploaded image"
 )
 def identify_food(
@@ -34,10 +38,22 @@ def identify_food(
 
     try:
 
-        result, ingredients, nutrition_info = food_service.identify_food(
+        (
+            result,
+            ingredients,
+            nutrition_info,
+            calories_kcal
+        ) = food_service.identify_food(
             image_bytes,
             request.prompt,
             request.max_new_tokens
+        )
+
+    except FoodNotRecognisedError as error:
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(error)
         )
 
     except (UnidentifiedImageError, OSError) as error:
@@ -58,6 +74,7 @@ def identify_food(
         result=result,
         ingredients=ingredients,
         nutrition_info=nutrition_info,
+        calories_kcal=calories_kcal,
         filename=request.image.filename or "upload",
         device=DEVICE
     )
